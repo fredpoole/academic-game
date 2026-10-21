@@ -5,6 +5,7 @@ Run:  python main.py
 
 import asyncio
 import math
+import random
 import re
 import sys
 import webbrowser
@@ -13,6 +14,8 @@ from urllib.parse import quote
 import pygame
 
 from events import EVENTS
+from identity import (DEFAULT_IDENTITY, GENDERS, ORIENTATIONS, RACE_NOTES, RACES, RULES,
+                      describe)
 from model import (ACTIVITIES, ACT_KEYS, BASE_HOURS, CATEGORIES, MAX_HOURS,
                    MAX_PER_ACTIVITY, MIN_CLASS_HOURS, RUBRICS, SCORE_CHASING, STAR_LABELS,
                    STEP, YEARS, Career)
@@ -160,8 +163,16 @@ def fmt_stat(key, v):
 # The professor
 # ---------------------------------------------------------------------------
 
+SKIN = {"White": (240, 208, 176), "Black": (122, 82, 56), "Brown": (192, 138, 98), "Asian": (234, 198, 160)}
+HAIR = {"White": (95, 66, 44), "Black": (34, 28, 26), "Brown": (44, 32, 28), "Asian": (26, 22, 24)}
+PRIDE = [(228, 3, 3), (255, 140, 0), (255, 237, 0), (0, 128, 38), (36, 64, 142), (115, 41, 130)]
+
+
 def draw_professor(surf, cx, base_y, s, g, t=0.0):
     """A simple stick-figure professor. Ages, tires, and piles up papers."""
+    ident = g.identity
+    skin = SKIN[ident["race"]]
+    gender = ident["gender"]
     energy = g.energy
     years = (g.year - 1) / (YEARS - 1)
     overtime = g.total_hours() > BASE_HOURS
@@ -197,10 +208,23 @@ def draw_professor(surf, cx, base_y, s, g, t=0.0):
                                        (hip[0] + 18 * s, hip[1] + 6 * s), (hip[0] - 18 * s, hip[1] + 6 * s)])
     pygame.draw.polygon(surf, (250, 250, 250), [(neck[0] - 6 * s, neck[1] + 4 * s), (neck[0] + 6 * s, neck[1] + 4 * s),
                                                 (neck[0], neck[1] + 22 * s)])
-    tie = [(150, 40, 40), (40, 70, 150), (180, 140, 30)][g.title_level]
-    pygame.draw.polygon(surf, tie, [(neck[0] - 3 * s, neck[1] + 5 * s), (neck[0] + 3 * s, neck[1] + 5 * s),
-                                    (neck[0] + 4 * s, neck[1] + 26 * s), (neck[0], neck[1] + 31 * s),
-                                    (neck[0] - 4 * s, neck[1] + 26 * s)])
+    accent = [(150, 40, 40), (40, 70, 150), (180, 140, 30)][g.title_level]
+    if gender == "Man":
+        pygame.draw.polygon(surf, accent, [(neck[0] - 3 * s, neck[1] + 5 * s), (neck[0] + 3 * s, neck[1] + 5 * s),
+                                           (neck[0] + 4 * s, neck[1] + 26 * s), (neck[0], neck[1] + 31 * s),
+                                           (neck[0] - 4 * s, neck[1] + 26 * s)])
+    elif gender == "Woman":
+        pygame.draw.polygon(surf, accent, [(neck[0] - 6 * s, neck[1] + 4 * s), (neck[0] + 6 * s, neck[1] + 4 * s),
+                                           (neck[0], neck[1] + 20 * s)])
+        pygame.draw.circle(surf, GOLD, (int(neck[0]), int(neck[1] + 14 * s)), max(2, int(3 * s)))
+    else:
+        bow = (neck[0], neck[1] + 7 * s)
+        pygame.draw.polygon(surf, accent, [(bow[0], bow[1]), (bow[0] - 8 * s, bow[1] - 5 * s), (bow[0] - 8 * s, bow[1] + 5 * s)])
+        pygame.draw.polygon(surf, accent, [(bow[0], bow[1]), (bow[0] + 8 * s, bow[1] - 5 * s), (bow[0] + 8 * s, bow[1] + 5 * s)])
+    if ident["orientation"] != "Straight" and ident["out"]:
+        pin = (int(neck[0] - 12 * s), int(neck[1] + 16 * s))
+        for i, col in enumerate(PRIDE):
+            pygame.draw.rect(surf, col, (pin[0] - 4 * s, pin[1] - 5 * s + i * 1.7 * s, 8 * s, 1.8 * s))
     # Arms: up when energized, drooping when exhausted
     lift = (energy - 50) / 50 * 20 * s
     for side in (-1, 1):
@@ -209,17 +233,29 @@ def draw_professor(surf, cx, base_y, s, g, t=0.0):
         hand = (elbow[0] + side * 6 * s, elbow[1] + 24 * s - lift * 1.6)
         pygame.draw.line(surf, jacket, sh, elbow, max(3, int(7 * s)))
         pygame.draw.line(surf, jacket, elbow, hand, max(3, int(7 * s)))
-        pygame.draw.circle(surf, (240, 208, 176), hand, int(5 * s))
-    # Head
-    pygame.draw.circle(surf, (240, 208, 176), head, int(24 * s))
+        pygame.draw.circle(surf, skin, hand, int(5 * s))
     # Hair goes grey as the career goes on
-    brown, grey = (95, 66, 44), (200, 200, 205)
-    hair = tuple(int(b + (gr - b) * years) for b, gr in zip(brown, grey))
-    hair_rect = pygame.Rect(head[0] - 25 * s, head[1] - 27 * s, 50 * s, 30 * s)
-    pygame.draw.arc(surf, hair, hair_rect, math.radians(10 + years * 50), math.radians(170 - years * 50),
-                    max(3, int(9 * s)))
-    pygame.draw.circle(surf, hair, (head[0] - 23 * s, head[1] - 2 * s), int(6 * s))
-    pygame.draw.circle(surf, hair, (head[0] + 23 * s, head[1] - 2 * s), int(6 * s))
+    base, grey = HAIR[ident["race"]], (200, 200, 205)
+    hair = tuple(int(b + (gr - b) * years) for b, gr in zip(base, grey))
+    # Longer styles are drawn behind the head
+    if gender == "Woman" and ident["race"] == "Black":
+        pygame.draw.circle(surf, hair, (head[0], head[1] - 6 * s), int(34 * s))
+    elif gender == "Woman":
+        pygame.draw.ellipse(surf, hair, (head[0] - 30 * s, head[1] - 30 * s, 60 * s, 78 * s))
+    elif gender == "Non-binary":
+        pygame.draw.ellipse(surf, hair, (head[0] - 29 * s, head[1] - 30 * s, 58 * s, 54 * s))
+    # Head
+    pygame.draw.circle(surf, skin, head, int(24 * s))
+    if gender == "Man":
+        hair_rect = pygame.Rect(head[0] - 25 * s, head[1] - 27 * s, 50 * s, 30 * s)
+        pygame.draw.arc(surf, hair, hair_rect, math.radians(10 + years * 50), math.radians(170 - years * 50),
+                        max(3, int(9 * s)))
+        pygame.draw.circle(surf, hair, (head[0] - 23 * s, head[1] - 2 * s), int(6 * s))
+        pygame.draw.circle(surf, hair, (head[0] + 23 * s, head[1] - 2 * s), int(6 * s))
+    elif not (gender == "Woman" and ident["race"] == "Black"):
+        # Fringe across the top of the head
+        pygame.draw.arc(surf, hair, (head[0] - 25 * s, head[1] - 27 * s, 50 * s, 34 * s),
+                        math.radians(15), math.radians(165), max(3, int(10 * s)))
     # Glasses
     for side in (-1, 1):
         pygame.draw.circle(surf, INK, (head[0] + side * 9 * s, head[1] - 2 * s), int(7 * s), max(1, int(2 * s)))
@@ -387,6 +423,76 @@ class TitleScreen(Screen):
         tips = ["Hours over 40 drain energy.", "Low energy = less output.", "Watch the next review rubric."]
         for i, tip in enumerate(tips):
             text(surf, "•  " + tip, (W - 330, 470 + i * 30), 17, MUTED)
+        super().draw(surf)
+
+
+class Toggle(Button):
+    """A button that shows whether its option is selected."""
+
+    def __init__(self, rect, label, on_click, selected, size=17, enabled=None):
+        super().__init__(rect, label, on_click, kind="small", size=size, enabled=enabled)
+        self.selected = selected
+
+    def draw(self, surf):
+        on = self.enabled()
+        hover = self.rect.collidepoint(pygame.mouse.get_pos())
+        if not on:
+            pygame.draw.rect(surf, (244, 241, 235), self.rect, border_radius=10)
+            text(surf, self.label, self.rect.center, self.size, (195, 190, 182), anchor="center")
+        elif self.selected():
+            pygame.draw.rect(surf, DARK, self.rect, border_radius=10)
+            text(surf, self.label, self.rect.center, self.size, (255, 255, 255), bold=True, anchor="center")
+        else:
+            pygame.draw.rect(surf, (255, 255, 255) if not hover else (246, 240, 226), self.rect, border_radius=10)
+            pygame.draw.rect(surf, DARK if hover else LINE, self.rect, 2, border_radius=10)
+            text(surf, self.label, self.rect.center, self.size, INK, anchor="center")
+
+
+class IdentityScreen(Screen):
+    X = 300
+    ROWS = [("gender", "Gender", GENDERS, 140), ("race", "Race / ethnicity", RACES, 240),
+            ("orientation", "Sexual orientation", ORIENTATIONS, 360), ("out", "Out at work?", [True, False], 460)]
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.sel = dict(app.identity)
+        self.preview = Career(identity=self.sel)
+        for key, _, options, y in self.ROWS:
+            for i, opt in enumerate(options):
+                label = ("Yes" if opt else "No") if key == "out" else opt
+                enabled = (lambda: self.sel["orientation"] != "Straight") if key == "out" else None
+                self.buttons.append(Toggle((self.X + i * 160, y, 150, 50), label,
+                                           lambda k=key, o=opt: self.pick(k, o),
+                                           lambda k=key, o=opt: self.sel[k] == o, enabled=enabled))
+        self.buttons.append(Button((self.X, 690, 200, 56), "Randomize", self.randomize, kind="small", size=19))
+        self.buttons.append(Button((960, 690, 280, 56), "Start your career  >",
+                                   lambda: self.app.begin_career(self.sel)))
+
+    def pick(self, key, value):
+        self.sel[key] = value
+        self.preview = Career(identity=self.sel)
+
+    def randomize(self):
+        self.sel = dict(gender=random.choice(GENDERS), race=random.choice(RACES),
+                        orientation=random.choice(ORIENTATIONS), out=random.random() < 0.6)
+        self.preview = Career(identity=self.sel)
+
+    def draw(self, surf):
+        surf.fill(BG)
+        text(surf, "STEP 1", (60, 40), 14, MUTED, bold=True)
+        text(surf, "Choose your professor", (60, 60), 40, INK, bold=True)
+        for key, label, _, y in self.ROWS:
+            off = key == "out" and self.sel["orientation"] == "Straight"
+            text(surf, label, (60, y + 14), 19, MUTED if off else INK, bold=True)
+        text(surf, "Brown = " + RACE_NOTES["Brown"], (self.X, 296), 14, MUTED)
+        panel(surf, (980, 120, 260, 360))
+        draw_professor(surf, 1120, 420, 1.15, self.preview, self.t)
+        text_block(surf, describe(self.sel), (996, 436), 230, 14, MUTED)
+        note = ("Your identity doesn't change what you are able to do. It may change how the system responds "
+                "to what you do: evaluations, citations, grants, service requests, and more. Effects are based on "
+                "published research and are revealed at the end of the game.")
+        panel(surf, (60, 540, 1180, 120))
+        text_block(surf, note, (84, 560), 1130, 18, INK)
         super().draw(surf)
 
 
@@ -669,7 +775,7 @@ def copy_text(s):
 
 
 class FinalScreen(Screen):
-    PAGES = 5
+    PAGES = 6
 
     def __init__(self, app):
         super().__init__(app)
@@ -684,7 +790,8 @@ class FinalScreen(Screen):
         if self.page > 0:
             self.buttons.append(Button((60, 726, 180, 52), "<  Back", lambda: self.turn(-1), kind="small", size=18))
         if self.page < self.PAGES - 1:
-            labels = ["What really happened  >", "Behind the scenes  >", "Discuss  >", "Share results  >"]
+            labels = ["What really happened  >", "Who you were  >", "Behind the scenes  >", "Discuss  >",
+                      "Share results  >"]
             self.buttons.append(Button((940, 726, 280, 52), labels[self.page], lambda: self.turn(1)))
         else:
             self.buttons.append(Button((940, 726, 280, 52), "Play again", self.app.new_game))
@@ -725,7 +832,7 @@ class FinalScreen(Screen):
         self.set_buttons()
 
     def handle(self, e):
-        if e.type == pygame.MOUSEWHEEL and self.page == 2:
+        if e.type == pygame.MOUSEWHEEL and self.page == 3:
             self.scroll = max(0, self.scroll - e.y * 30)
         super().handle(e)
 
@@ -735,7 +842,8 @@ class FinalScreen(Screen):
 
     def draw(self, surf):
         surf.fill(BG)
-        pages = [self.page_scoreboard, self.page_reveal, self.page_behind, self.page_discuss, self.page_share]
+        pages = [self.page_scoreboard, self.page_reveal, self.page_identity, self.page_behind, self.page_discuss,
+                 self.page_share]
         pages[self.page](surf)
         for i in range(self.PAGES):
             pygame.draw.circle(surf, INK if i == self.page else LINE,
@@ -889,6 +997,55 @@ class FinalScreen(Screen):
             y = text_block(surf, q, (190, y + 2), 940, 19, INK) + 22
 
 
+    def page_identity(self, surf):
+        g = self.g
+        c = g.costs
+        text(surf, "WHO YOU WERE", (W // 2, 30), 14, MUTED, bold=True, anchor="midtop")
+        text(surf, "The same work, scored differently", (W // 2, 50), 40, INK, bold=True, anchor="midtop")
+        text(surf, f"You played as: {describe(g.identity)}", (W // 2, 102), 18, MUTED, anchor="midtop")
+        panel(surf, (60, 136, 1160, 570))
+        years = max(1, len(g.history))
+        grant_cut = 1 - g.idfx["grant_mult"]
+        tiles = [
+            (c["eval"] > 0, f"-{c['eval'] / years:.2f}", "on every teaching evaluation",
+             f"{c['eval'] * 25:.0f} annual review points lost"),
+            (c["service_hours"] > 0, f"{c['service_hours']:,.0f} hrs", "of extra mentoring and service",
+             "requested of you, barely credited"),
+            (c["cites"] >= 1, f"{c['cites']:,.0f}", "citations you didn't receive", "for the same papers"),
+            (grant_cut > 0 and c["grant_odds"] > 0, f"{grant_cut * 100:.0f}% lower", "grant odds on every application",
+             f"about {c['grant_odds']:.1f} grants you'd otherwise have won"),
+            (g.fair_salary - g.salary >= 1, f"${g.fair_salary - g.salary:,.0f}", "less salary",
+             "from smaller raises for the same ratings"),
+            (c["energy"] > 0, f"-{c['energy']:.0f}", "energy", "lost to devaluation, harassment, or concealment"),
+        ]
+        tiles = [tl for tl in tiles if tl[0]]
+        if not tiles:
+            text(surf, "The system gave you the benefit of the doubt.", (100, 166), 28, INK, bold=True)
+            text_block(surf, "Nothing about your identity cost you points. Players who chose other identities and "
+                             "made exactly your choices faced documented biases like these:",
+                       (100, 210), 1080, 18, MUTED)
+            y = 270
+            for _, _, label, source in RULES:
+                y = text_block(surf, "•  " + label, (100, y), 1080, 16, INK)
+                y = text_block(surf, source, (122, y), 1060, 13, MUTED) + 8
+            return
+        for i, (_, big, label, sub) in enumerate(tiles):
+            x = 100 + (i % 3) * 370
+            y = 166 + (i // 3) * 112
+            text(surf, big, (x, y), 34, RED, bold=True)
+            text(surf, label, (x, y + 44), 16, INK, bold=True)
+            text(surf, sub, (x, y + 66), 14, MUTED)
+        y = 166 + ((len(tiles) + 2) // 3) * 112 + 6
+        pygame.draw.line(surf, LINE, (100, y - 10), (1180, y - 10), 2)
+        text(surf, "WHAT THE RESEARCH SAYS", (100, y), 12, MUTED, bold=True)
+        y += 22
+        for label, source in g.id_applied:
+            y = text_block(surf, "•  " + label, (100, y), 1080, 15, INK)
+            y = text_block(surf, source, (122, y), 1060, 13, MUTED) + 6
+        text_block(surf, "Effects are rough approximations of published findings, applied the same way every year. "
+                         "Real experiences vary widely, and evidence on some groups is limited.",
+                   (100, 664), 1080, 13, MUTED)
+
     def page_share(self, surf):
         g = self.g
         text(surf, "SHARE", (W // 2, 30), 14, MUTED, bold=True, anchor="midtop")
@@ -944,6 +1101,7 @@ class App:
         pygame.display.set_caption("Winning the Academic Game")
         self.surf = pygame.display.set_mode((W, H))
         self.clock = pygame.time.Clock()
+        self.identity = dict(DEFAULT_IDENTITY)
         self.preview = Career()
         self.career = self.preview
         self.screen = TitleScreen(self)
@@ -952,7 +1110,11 @@ class App:
         self.pending_milestone = None
 
     def new_game(self):
-        self.career = Career()
+        self.screen = IdentityScreen(self)
+
+    def begin_career(self, identity):
+        self.identity = dict(identity)
+        self.career = Career(identity=identity)
         self.screen = AllocateScreen(self)
 
     def start_year(self):

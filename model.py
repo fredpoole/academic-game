@@ -7,8 +7,11 @@ scores tracks what the job is actually for: knowledge, student learning,
 real service, and the professor's own wellbeing.
 """
 
+import math
 import random
 from collections import defaultdict
+
+from identity import DEFAULT_IDENTITY, effects_for
 
 YEARS = 10
 BASE_HOURS = 40
@@ -60,12 +63,14 @@ DEFAULT_ALLOC = dict(deep=6, salami=3, trendy=2, grants=4, rigor=6, pleaser=4,
 # How each kind of paper gets cited over time: deep work starts slow and
 # keeps growing; quick work spikes and fades.
 PAPER_KINDS = {
-    "deep":     dict(rate=4.0, grow=1.5, cap=18.0),
-    "salami":   dict(rate=2.0, mult=0.80),
-    "trendy":   dict(rate=12.0, mult=0.80),
-    "prestige": dict(rate=8.0, mult=0.88),
-    "guild":    dict(rate=5.0, mult=0.85),
+    "deep":     dict(rate=15.0, grow=4.0, cap=50.0, hit=(0.08, 2, 5)),
+    "salami":   dict(rate=10.0, mult=0.85, hit=(0.01, 2, 4)),
+    "trendy":   dict(rate=30.0, mult=0.85, hit=(0.12, 6, 15)),
+    "prestige": dict(rate=25.0, mult=0.88, hit=(0.05, 3, 8)),
+    "guild":    dict(rate=15.0, mult=0.85, hit=(0.03, 3, 6)),
 }
+# hit = (chance, low, high): a paper that catches on gets its citation rate
+# multiplied by a random factor in [low, high]. Hot topics go viral most often.
 
 TITLES = ["Assistant Professor", "Associate Professor", "Full Professor"]
 
@@ -77,14 +82,14 @@ RUBRICS = {
     ]),
     6: dict(name="Tenure Review", need=4, hard=True, criteria=[
         ("Publications", "pubs", 10),
-        ("h-index", "h", 4),
+        ("h-index", "h", 6),
         ("Average teaching evaluation", "eval_avg", 3.8),
         ("External grants won", "grants_won", 1),
         ("Service lines on CV", "service", 5),
     ]),
     10: dict(name="Promotion to Full Professor", need=5, hard=False, criteria=[
         ("Publications", "pubs", 22),
-        ("h-index", "h", 9),
+        ("h-index", "h", 14),
         ("Grant dollars", "grant_dollars", 750_000),
         ("Reputation", "reputation", 45),
         ("Service lines on CV", "service", 10),
@@ -93,7 +98,8 @@ RUBRICS = {
 }
 
 # Points per unit in the annual review. Only countable things appear here.
-REVIEW_WEIGHTS = dict(pub=8, cite=0.1, grant=20, eval=25, enroll=0.3,
+# Citations score on a log scale: 10 citations ~ 10 pts, 1,000 ~ 30 pts.
+REVIEW_WEIGHTS = dict(pub=8, cite=10, grant=20, eval=25, enroll=0.3,
                       service=6, responsive=8, review=1, talk=3, compliance=10)
 
 STAR_LABELS = ["", "Unsatisfactory", "Needs Improvement", "Meets Expectations",
@@ -125,25 +131,32 @@ BADGES = [
 
 
 class Paper:
-    __slots__ = ("kind", "rate", "cites", "year")
+    __slots__ = ("kind", "rate", "boost", "cites", "year")
 
-    def __init__(self, kind, year):
+    def __init__(self, kind, year, rng):
         self.kind = kind
-        self.rate = PAPER_KINDS[kind]["rate"]
+        spec = PAPER_KINDS[kind]
+        chance, low, high = spec["hit"]
+        self.boost = rng.uniform(low, high) if rng.random() < chance else 1.0
+        self.rate = spec["rate"] * self.boost
         self.cites = 0.0
         self.year = year
 
     def age(self):
         spec = PAPER_KINDS[self.kind]
         if "grow" in spec:
-            self.rate = min(spec["cap"], self.rate + spec["grow"])
+            self.rate = min(spec["cap"] * self.boost, self.rate + spec["grow"] * self.boost)
         else:
             self.rate *= spec["mult"]
 
 
 class Career:
-    def __init__(self, seed=None):
+    def __init__(self, seed=None, identity=None):
         self.rng = random.Random(seed)
+        self.identity = dict(identity or DEFAULT_IDENTITY)
+        self.idfx, self.id_applied = effects_for(self.identity)
+        self.costs = defaultdict(float)  # what identity bias cost, for the reveal
+        self.fair_salary = 85_000.0  # salary without biased raises
         self.year = 1
         self.energy = 75.0
         self.salary = 85_000.0
@@ -237,16 +250,19 @@ class Career:
     # ---- papers ----------------------------------------------------------
     def add_papers(self, kind, n):
         for _ in range(int(n)):
-            self.papers.append(Paper(kind, self.year))
+            self.papers.append(Paper(kind, self.year, self.rng))
 
     def add_cites(self, n):
         if not self.papers:
             self.add_papers("salami", 1)
         recent = self.papers[-3:]
         for p in recent:
-            p.cites += n / len(recent)
+            p.cites += n * self.idfx["cite_mult"] / len(recent)
+        self.costs["cites"] += n * (1 - self.idfx["cite_mult"])
 
     def roll_grant(self, chance, big=False):
+        self.costs["grant_odds"] += chance * (1 - self.idfx["grant_mult"])
+        chance *= self.idfx["grant_mult"]
         if self.rng.random() < chance:
             amount = (self.rng.uniform(600, 1200) if big else
                       self.rng.uniform(180, 420) + self.reputation * 3)
@@ -329,6 +345,7 @@ class Career:
         if fx.get("salary"):
             v = fx["salary"]
             self.salary += v
+            self.fair_salary += v
             shown.append(f"Salary {'+' if v > 0 else '-'}${abs(v):,}")
         if fx.get("eval"):
             v = fx["eval"]
@@ -389,6 +406,8 @@ class Career:
         eff = self.efficiency()
         boost = 1.3 if self.grant_active > 0 else 1.0
         start_pubs, start_cites, start_service = self.pubs, self.citations, int(self.service)
+        start_rep = self.reputation
+        idfx = self.idfx
         notes = []
 
         # Research
@@ -423,11 +442,12 @@ class Career:
             if grant_won:
                 notes.append(f"Grant funded: ${grant_won:,}! Research output +30% for 3 years.")
             elif a["grants"] > 0:
-                notes.append(f"Grant rejected ({int(chance * 100)}% odds). Revise and resubmit?")
+                notes.append(f"Grant rejected ({int(chance * 100)}% odds). Better luck next cycle.")
 
         # Teaching
         ev = 3.5 + a["pleaser"] * 0.085 - a["rigor"] * 0.03 + a["mentor"] * 0.01
-        ev += m["eval"] + self.rng.gauss(0, 0.08)
+        ev += m["eval"] + idfx["eval"] + self.rng.gauss(0, 0.08)
+        self.costs["eval"] -= idfx["eval"]
         ev = max(1.0, min(5.0, ev))
         self.evals.append(round(ev, 2))
         self.learning += (a["rigor"] * 1.3 + a["mentor"] * 1.5 + a["pleaser"] * 0.25) * eff
@@ -452,7 +472,7 @@ class Career:
         # Social media: fast reputation and a citation bump, nothing else.
         self.reputation += a["social"] * 1.0 * eff
         if a["social"] and self.papers:
-            self.add_cites(a["social"] * 0.8)
+            self.add_cites(a["social"] * 3)
         # Conferences: slower reputation, but they actually feed the field.
         self.frac["talks"] += a["conference"] * 0.35 * eff
         new_talks = int(self.frac["talks"])
@@ -462,19 +482,35 @@ class Career:
         self.knowledge += a["conference"] * 0.25 * eff
         self.real_service += a["conference"] * 0.35 * eff
 
+        # Unasked-for service and mentoring that lands on some faculty more than
+        # others: real help to real people, extra hours, almost no credit.
+        tax = idfx["service_tax"]
+        self.real_service += tax * 1.1 * eff
+        self.service += tax * 0.04
+        self.costs["service_hours"] += tax * 45
+
+        # Bias shrinks how much reputation your work earns you.
+        gained = self.reputation - start_rep
+        if gained > 0:
+            self.reputation -= gained * (1 - idfx["rep_mult"])
+            self.costs["reputation"] += gained * (1 - idfx["rep_mult"])
+
         responsive = max(0.0, min(1.0, a["email"] / 5 + m["responsiveness"]))
         compliance = max(0.0, min(1.0, a["forms"] / 3 + m["compliance"]))
         self.reputation = max(0.0, min(100.0, self.reputation * 0.93))
 
         # Citations accumulate; reputation makes people notice your work.
         for p in self.papers:
-            p.cites += p.rate * (1 + self.reputation / 80)
+            earned = p.rate * (1 + self.reputation / 80)
+            p.cites += earned * idfx["cite_mult"]
+            self.costs["cites"] += earned * (1 - idfx["cite_mult"])
             p.age()
 
         # Energy: overtime drains it, a normal week slowly restores it.
-        total = self.total_hours()
+        total = self.total_hours() + tax
         self.energy = max(0.0, min(100.0, self.energy + 5 - max(0, total - BASE_HOURS) * 2.2
-                                         + max(0, BASE_HOURS - total) * 1.0))
+                                         + max(0, BASE_HOURS - total) * 1.0 - idfx["energy_drain"]))
+        self.costs["energy"] += idfx["energy_drain"]
         self.wellbeing.append(self.energy)
         if self.grant_active > 0 and not grant_won:
             self.grant_active -= 1
@@ -486,7 +522,7 @@ class Career:
         new_service = int(self.service) - start_service
         items = [
             ("New publications", f"{new_pubs}", new_pubs * W["pub"]),
-            ("New citations", f"{new_cites}", new_cites * W["cite"]),
+            ("New citations", f"{new_cites:,}", W["cite"] * math.log10(1 + new_cites)),
             ("Grant funded", "Yes" if grant_won else "No", W["grant"] if grant_won else 0),
             ("Teaching evaluation", f"{ev:.2f} / 5", (ev - 3.0) * W["eval"]),
             ("Enrollment", f"{self.enrollment} students", max(0, self.enrollment - 40) * W["enroll"]),
@@ -500,8 +536,9 @@ class Career:
             items.append(("Other items on your report", "", m["review"]))
         score = sum(p for _, _, p in items)
         stars = 5 if score >= 85 else 4 if score >= 60 else 3 if score >= 40 else 2 if score >= 20 else 1
-        raise_pct = RAISES[stars]
+        raise_pct = RAISES[stars] * idfx["raise_mult"]
         self.salary *= 1 + raise_pct / 100
+        self.fair_salary *= 1 + RAISES[stars] / 100
 
         before = set(self.badges)
         for name, test in BADGES:
