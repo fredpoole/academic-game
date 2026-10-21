@@ -1,0 +1,39 @@
+name: Deploy web version
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: academic-game
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build with pygbag
+        run: |
+          pip install pygbag==0.9.3
+          python -m pygbag --build academic-game
+          sed -i 's#<title>academic-game</title>#<title>Winning the Academic Game</title>#' academic-game/build/web/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: academic-game/build/web
+      - id: deployment
+        uses: actions/deploy-pages@v4
