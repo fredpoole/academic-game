@@ -14,7 +14,7 @@ from urllib.parse import quote
 import pygame
 
 from events import EVENTS
-from identity import (DEFAULT_IDENTITY, GENDERS, ORIENTATIONS, RACE_NOTES, RACES, RULES,
+from identity import (DEFAULT_IDENTITY, GENDERS, ORIENTATIONS, RACES, RULES,
                       describe)
 from model import (ACTIVITIES, ACT_KEYS, BASE_HOURS, CATEGORIES, MAX_HOURS,
                    MAX_PER_ACTIVITY, MIN_CLASS_HOURS, RUBRICS, SCORE_CHASING, STAR_LABELS,
@@ -484,7 +484,6 @@ class IdentityScreen(Screen):
         for key, label, _, y in self.ROWS:
             off = key == "out" and self.sel["orientation"] == "Straight"
             text(surf, label, (60, y + 14), 19, MUTED if off else INK, bold=True)
-        text(surf, "Brown = " + RACE_NOTES["Brown"], (self.X, 296), 14, MUTED)
         panel(surf, (980, 120, 260, 360))
         draw_professor(surf, 1120, 420, 1.15, self.preview, self.t)
         text_block(surf, describe(self.sel), (996, 436), 230, 14, MUTED)

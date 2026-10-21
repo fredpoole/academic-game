@@ -10,7 +10,6 @@ Real experiences vary widely, and evidence on some groups is thin.
 
 GENDERS = ["Man", "Woman", "Non-binary"]
 RACES = ["White", "Black", "Brown", "Asian"]
-RACE_NOTES = {"Brown": "Latinx, South Asian, or Middle Eastern"}
 ORIENTATIONS = ["Straight", "Gay or lesbian", "Bisexual", "Queer"]
 
 DEFAULT_IDENTITY = dict(gender="Man", race="White", orientation="Straight", out=True)
