@@ -30,6 +30,44 @@ READINGS = [
     ("Read Nguyen (2024)", "https://jesp.org/paper/36346f73-90e0-81ae-bf22-ebd3754e0a2f"),
 ]
 WEB = sys.platform == "emscripten"
+
+# On phones, the browser sends taps to the game without moving the "mouse"
+# first, so every tap arrives at the position of the first one. This script
+# records where each pointer or finger actually lands (as a fraction of the
+# canvas) so the game can use the real position. On a touch device it also
+# goes fullscreen and asks for landscape on the first tap, where allowed.
+POINTER_JS = """(() => {
+  if (window.agHooked) return;
+  window.agHooked = true;
+  window.agPX = -1; window.agPY = -1;
+  document.body.style.background = '#f6f2e9';
+  const rec = (x, y) => {
+    const c = document.getElementById('canvas');
+    if (!c) return;
+    const r = c.getBoundingClientRect();
+    window.agPX = (x - r.left) / r.width;
+    window.agPY = (y - r.top) / r.height;
+  };
+  window.addEventListener('pointerdown', e => rec(e.clientX, e.clientY), true);
+  window.addEventListener('pointermove', e => rec(e.clientX, e.clientY), true);
+  window.addEventListener('touchstart', e => { const t = e.touches[0]; if (t) rec(t.clientX, t.clientY); }, true);
+  if (navigator.maxTouchPoints > 0) {
+    window.addEventListener('touchend', () => {
+      const d = document.documentElement;
+      if (d.requestFullscreen && !document.fullscreenElement) {
+        d.requestFullscreen().then(() => {
+          if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+        }).catch(() => {});
+      }
+    }, {once: true, capture: true});
+  }
+})()"""
+
+_pointer = None  # last real pointer position on the web, in game coordinates
+
+
+def mouse_pos():
+    return _pointer or pygame.mouse.get_pos()
 FPS = 60
 
 BG = (246, 242, 233)
@@ -313,14 +351,16 @@ class Button:
         self.enabled = enabled or (lambda: True)
 
     def handle(self, e):
-        if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.rect.collidepoint(e.pos):
+        # Small buttons get a slightly larger invisible tap area for fingers
+        hit = self.rect.inflate(16, 10) if self.kind == "small" else self.rect
+        if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and hit.collidepoint(e.pos):
             if self.enabled():
                 self.on_click()
             return True
         return False
 
     def draw(self, surf):
-        hover = self.rect.collidepoint(pygame.mouse.get_pos())
+        hover = self.rect.collidepoint(mouse_pos())
         on = self.enabled()
         if self.kind == "primary":
             col = (DARK if not hover else (60, 64, 86)) if on else (190, 186, 180)
@@ -442,7 +482,7 @@ class Toggle(Button):
 
     def draw(self, surf):
         on = self.enabled()
-        hover = self.rect.collidepoint(pygame.mouse.get_pos())
+        hover = self.rect.collidepoint(mouse_pos())
         if not on:
             pygame.draw.rect(surf, (244, 241, 235), self.rect, border_radius=10)
             text(surf, self.label, self.rect.center, self.size, (195, 190, 182), anchor="center")
@@ -1182,19 +1222,64 @@ class App:
         else:
             self.screen = AllocateScreen(self)
 
+    def fix_pointer(self, e):
+        """Replace a web mouse event's position with where the pointer really is."""
+        global _pointer
+        import platform
+        px, py = platform.window.agPX, platform.window.agPY
+        if px is None or px < 0:
+            return e
+        pos = (int(px * W), int(py * H))
+        _pointer = pos
+        if e.type == pygame.MOUSEMOTION:
+            return pygame.event.Event(e.type, pos=pos, rel=e.rel, buttons=e.buttons)
+        return pygame.event.Event(e.type, pos=pos, button=e.button)
+
+    def is_portrait_phone(self):
+        import platform
+        w = platform.window
+        return w.navigator.maxTouchPoints > 0 and w.innerHeight > w.innerWidth
+
+    def draw_rotate(self, surf):
+        surf.fill(DARK)
+        cx, cy = W // 2, 300
+        phone = pygame.Rect(0, 0, 120, 210)
+        phone.center = (cx - 120, cy)
+        pygame.draw.rect(surf, (255, 255, 255), phone, 6, border_radius=18)
+        side = pygame.Rect(0, 0, 210, 120)
+        side.center = (cx + 120, cy)
+        pygame.draw.rect(surf, GOLD, side, 6, border_radius=18)
+        pygame.draw.arc(surf, (255, 255, 255), (cx - 70, cy - 150, 140, 120), 0.3, 2.8, 6)
+        pygame.draw.polygon(surf, (255, 255, 255), [(cx + 62, cy - 104), (cx + 82, cy - 80), (cx + 50, cy - 78)])
+        text(surf, "Turn your phone sideways", (W // 2, 470), 90, (255, 255, 255), bold=True, anchor="midtop")
+        text(surf, "The game is built for a wide screen.", (W // 2, 600), 56, (190, 192, 210), anchor="midtop")
+
     async def run(self):
         # async so the same loop runs on the desktop and in the browser (pygbag)
-        web = sys.platform == "emscripten"
+        if WEB:
+            import platform
+            platform.window.eval(POINTER_JS)
+        portrait, check_at = False, 0.0
         while True:
             dt = self.clock.tick(FPS) / 1000
+            if WEB:
+                check_at -= dt
+                if check_at <= 0:
+                    portrait, check_at = self.is_portrait_phone(), 0.5
             for e in pygame.event.get():
-                quit_key = e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE and not web
+                quit_key = e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE and not WEB
                 if e.type == pygame.QUIT or quit_key:
                     pygame.quit()
                     return
-                self.screen.handle(e)
-            self.screen.update(dt)
-            self.screen.draw(self.surf)
+                if WEB and e.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
+                    e = self.fix_pointer(e)
+                if not portrait:
+                    self.screen.handle(e)
+            if portrait:
+                self.draw_rotate(self.surf)
+            else:
+                self.screen.update(dt)
+                self.screen.draw(self.surf)
             pygame.display.flip()
             await asyncio.sleep(0)
 
