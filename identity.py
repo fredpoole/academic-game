@@ -1,11 +1,10 @@
 """Identity options and the documented biases they bring.
 
 Effects model how the *system* responds to a professor, not differences in
-ability: the same teaching gets lower evaluations, the same papers get fewer
-citations, the same proposals get funded less often, and some faculty are
-asked to do more unpaid service and mentoring. Sizes are rough, research-
-calibrated approximations: individually small, they compound over a career.
-Real experiences vary widely, and evidence on some groups is thin.
+ability. Each rule's direction comes from the cited research; the exact sizes
+are the game's own rough estimates, chosen to be modest. Individually small,
+they compound over a career. Real experiences vary widely, and evidence on
+some groups is thin, so those groups get fewer, smaller effects.
 """
 
 GENDERS = ["Man", "Woman", "Non-binary"]
@@ -18,44 +17,47 @@ DEFAULT_IDENTITY = dict(gender="Man", race="White", orientation="Straight", out=
 BASE = dict(eval=0.0, service_tax=0.0, grant_mult=1.0, cite_mult=1.0,
             raise_mult=1.0, energy_drain=0.0, rep_mult=1.0)
 
-# Each rule: (applies?, effects, short label, source)
+# Each rule: (applies?, effects, what the research found, sources)
 RULES = [
     (lambda i: i["gender"] == "Woman",
      dict(eval=-0.10, service_tax=0.6, cite_mult=0.90, grant_mult=0.93, raise_mult=0.92),
-     "Women receive lower teaching evaluations for identical teaching, do more internal service, "
-     "are cited less, and earn less.",
-     "Mengel, Sauermann & Zölitz 2019; Guarino & Borden 2017; Larivière et al. 2013; "
-     "Dion, Sumner & Mitchell 2018; Witteman et al. 2019; AAUP salary surveys"),
+     "Women get lower teaching evaluations for comparable teaching, do more internal service, are cited "
+     "less, are funded less when reviewers judge the person rather than the science, and earn about 82% "
+     "of men's salaries (a raw gap that also reflects rank and field).",
+     "Mengel, Sauermann & Zölitz 2019; Chávez & Mitchell 2020; Guarino & Borden 2017; "
+     "Larivière et al. 2013; Dion, Sumner & Mitchell 2018; Witteman et al. 2019; AAUP 2022"),
     (lambda i: i["gender"] == "Non-binary",
-     dict(eval=-0.10, service_tax=0.5, cite_mult=0.95, energy_drain=3.0, rep_mult=0.92),
-     "Trans and non-binary scholars report more devaluation, harassment, and work stress. "
-     "Direct evidence on evaluations is limited, so effects here are cautious estimates.",
+     dict(energy_drain=3.0, rep_mult=0.92),
+     "LGBTQ+ STEM professionals report more harassment and professional devaluation; trans and "
+     "non-binary respondents also report more health strain. Evidence on evaluations, citations, and "
+     "grants is lacking, so the game applies none.",
      "Cech & Waidzunas 2021"),
     (lambda i: i["race"] == "Black",
      dict(eval=-0.15, service_tax=1.5, grant_mult=0.60, cite_mult=0.90),
-     "Black faculty receive lower evaluations, carry a heavy 'cultural taxation' of mentoring and "
-     "diversity service, and were funded at NIH about 10 points less often than comparable white applicants.",
+     "Instructors of color get lower evaluations; faculty of color carry a 'cultural taxation' of "
+     "mentoring and diversity service; Black NIH applicants were funded about 10 points less often after "
+     "controls (topic choice explains about a fifth of the gap); minoritized scholars are cited less.",
      "Chávez & Mitchell 2020; Padilla 1994; Ginther et al. 2011; Hoppe et al. 2019; Kozlowski et al. 2022"),
     (lambda i: i["race"] == "Brown",
-     dict(eval=-0.10, service_tax=1.0, grant_mult=0.95, cite_mult=0.95),
-     "Latinx and other faculty of color receive lower evaluations and are asked to mentor and serve "
-     "far more often than white colleagues.",
+     dict(eval=-0.10, service_tax=1.0, cite_mult=0.95),
+     "Instructors of color get lower evaluations; faculty of color carry a 'cultural taxation' of "
+     "mentoring and diversity service; minoritized scholars are cited less.",
      "Chávez & Mitchell 2020; Padilla 1994; Kozlowski et al. 2022"),
     (lambda i: i["race"] == "Asian",
-     dict(eval=-0.05, grant_mult=0.90, rep_mult=0.92),
-     "Asian faculty face perceived-foreignness bias in evaluations, a smaller NIH funding gap, and "
-     "are underrepresented in academic leadership.",
+     dict(eval=-0.05, grant_mult=0.95),
+     "Math instructors with Chinese or Korean surnames were rated lower for clarity on RateMyProfessors, "
+     "often with comments about accent; Asian NIH applicants had a 4-point raw funding gap.",
      "Subtirelu 2015; Ginther et al. 2011"),
     (lambda i: i["orientation"] != "Straight" and i["out"],
-     dict(energy_drain=3.0, rep_mult=0.90, cite_mult=0.97),
-     "Out LGBTQ+ scholars report fewer career opportunities, more harassment, and professional "
-     "devaluation, even after accounting for training and effort.",
+     dict(energy_drain=3.0, rep_mult=0.90),
+     "LGBTQ+ STEM professionals report fewer career opportunities, more harassment, and more "
+     "professional devaluation, not explained by differences in training or work effort.",
      "Cech & Waidzunas 2021"),
     (lambda i: i["orientation"] != "Straight" and not i["out"],
      dict(energy_drain=2.5),
-     "Staying closeted avoids some bias but carries its own cost: the constant work of concealing "
-     "part of yourself drains energy.",
-     "Pachankis 2007; Cech & Waidzunas 2021"),
+     "Concealing a stigmatized identity avoids some bias but carries its own stress and psychological "
+     "costs. (The game's out/not-out split is a modeling choice.)",
+     "Pachankis 2007"),
 ]
 
 

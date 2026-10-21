@@ -4,7 +4,9 @@ Run:  python main.py
 """
 
 import asyncio
+import base64
 import math
+import os
 import random
 import re
 import sys
@@ -493,8 +495,8 @@ class IdentityScreen(Screen):
         draw_professor(surf, 1120, 420, 1.15, self.preview, self.t)
         text_block(surf, describe(self.sel), (996, 436), 230, 14, MUTED)
         note = ("Your identity doesn't change what you are able to do. It may change how the system responds "
-                "to what you do: evaluations, citations, grants, service requests, and more. Effects are based on "
-                "published research and are revealed at the end of the game.")
+                "to what you do: evaluations, citations, grants, service requests, and more. Effects follow patterns "
+                "documented in published research and are revealed, with sources, at the end of the game.")
         panel(surf, (60, 540, 1180, 120))
         text_block(surf, note, (84, 560), 1130, 18, INK)
         super().draw(surf)
@@ -764,18 +766,24 @@ def open_url(url):
         webbrowser.open(url)
 
 
-def copy_text(s):
-    try:
-        if WEB:
-            import platform
-            platform.window.navigator.clipboard.writeText(s)
-        else:
-            if not pygame.scrap.get_init():
-                pygame.scrap.init()
-            pygame.scrap.put_text(s)
-        return True
-    except Exception:
-        return False
+def save_image(surface, filename):
+    """Save a surface as a PNG: a browser download on the web, ~/Downloads on desktop.
+    Returns a message for the player."""
+    if WEB:
+        import platform
+        tmp = "/tmp/" + filename
+        pygame.image.save(surface, tmp)
+        with open(tmp, "rb") as f:
+            data = base64.b64encode(f.read()).decode()
+        platform.window.eval(
+            "(()=>{const a=document.createElement('a');"
+            f"a.href='data:image/png;base64,{data}';a.download='{filename}';"
+            "document.body.appendChild(a);a.click();a.remove();})()")
+        return "Image downloaded. Attach it to your post!"
+    folder = os.path.expanduser("~/Downloads")
+    path = os.path.join(folder if os.path.isdir(folder) else ".", filename)
+    pygame.image.save(surface, path)
+    return f"Image saved to {path}"
 
 
 class FinalScreen(Screen):
@@ -813,7 +821,7 @@ class FinalScreen(Screen):
             for i, (label, url) in enumerate(links):
                 self.buttons.append(Button((160 + i * 196, 620, 180, 46), label,
                                            lambda u=url: self.share(u), size=17))
-            self.buttons.append(Button((160 + 4 * 196, 620, 176, 46), "Copy text", self.copy, kind="small", size=17))
+            self.buttons.append(Button((160 + 4 * 196, 620, 176, 46), "Save image", self.save, kind="small", size=17))
 
     def share_text(self):
         g = self.g
@@ -831,11 +839,15 @@ class FinalScreen(Screen):
 
     def share(self, url):
         open_url(url)
-        self.share_msg = "Opened in a new tab. If nothing appeared, allow pop-ups or use Copy text."
+        self.share_msg = "Opened in a new tab. Save the image to attach it. If nothing appeared, allow pop-ups."
 
-    def copy(self):
-        ok = copy_text(self.share_text() + " " + GAME_URL)
-        self.share_msg = "Copied! Paste it anywhere." if ok else "Couldn't copy here. Select the text above instead."
+    def save(self):
+        # The title and results card, without the buttons
+        shot = self.app.surf.subsurface(pygame.Rect(140, 20, 1000, 600)).copy()
+        try:
+            self.share_msg = save_image(shot, "academic-game-results.png")
+        except Exception:
+            self.share_msg = "Couldn't save the image here. Try a screenshot instead."
 
     def turn(self, d):
         self.page += d
@@ -1034,12 +1046,12 @@ class FinalScreen(Screen):
             (c["eval"] > 0, f"-{c['eval'] / years:.2f}", "on every teaching evaluation",
              f"{c['eval'] * 25:.0f} annual review points lost"),
             (c["service_hours"] > 0, f"{c['service_hours']:,.0f} hrs", "of extra mentoring and service",
-             "requested of you, barely credited"),
+             "expected of you, barely credited"),
             (c["cites"] >= 1, f"{c['cites']:,.0f}", "citations you didn't receive", "for the same papers"),
             (grant_cut > 0 and c["grant_odds"] > 0, f"{grant_cut * 100:.0f}% lower", "grant odds on every application",
              f"about {c['grant_odds']:.1f} grants you'd otherwise have won"),
             (g.fair_salary - g.salary >= 1, f"${g.fair_salary - g.salary:,.0f}", "less salary",
-             "from smaller raises for the same ratings"),
+             "in raises over your career"),
             (c["energy"] > 0, f"-{c['energy']:.0f}", "energy", "lost to devaluation, harassment, or concealment"),
         ]
         tiles = [tl for tl in tiles if tl[0]]
@@ -1048,10 +1060,10 @@ class FinalScreen(Screen):
             text_block(surf, "Nothing about your identity cost you points. Players who chose other identities and "
                              "made exactly your choices faced documented biases like these:",
                        (100, 210), 1080, 18, MUTED)
-            y = 270
+            y = 262
             for _, _, label, source in RULES:
-                y = text_block(surf, "•  " + label, (100, y), 1080, 16, INK)
-                y = text_block(surf, source, (122, y), 1060, 13, MUTED) + 8
+                y = text_block(surf, "•  " + label, (100, y), 1080, 14, INK, spacing=1.25)
+                y = text_block(surf, source, (122, y), 1060, 12, MUTED, spacing=1.2) + 5
             return
         for i, (_, big, label, sub) in enumerate(tiles):
             x = 100 + (i % 3) * 370
@@ -1066,13 +1078,13 @@ class FinalScreen(Screen):
         for label, source in g.id_applied:
             y = text_block(surf, "•  " + label, (100, y), 1080, 15, INK)
             y = text_block(surf, source, (122, y), 1060, 13, MUTED) + 6
-        text_block(surf, "Effects are rough approximations of published findings, applied the same way every year. "
-                         "Real experiences vary widely, and evidence on some groups is limited.",
+        text_block(surf, "The direction of each effect comes from the research above; the sizes are the game's own "
+                         "modest estimates. Real experiences vary widely, and evidence on some groups is limited.",
                    (100, 664), 1080, 13, MUTED)
 
     def page_share(self, surf):
         g = self.g
-        text(surf, "SHARE", (W // 2, 30), 14, MUTED, bold=True, anchor="midtop")
+        text(surf, "WINNING THE ACADEMIC GAME", (W // 2, 30), 14, MUTED, bold=True, anchor="midtop")
         text(surf, "Your results vs. reality", (W // 2, 50), 40, INK, bold=True, anchor="midtop")
         card = pygame.Rect(160, 110, 960, 490)
         panel(surf, card)
