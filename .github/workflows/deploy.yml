@@ -32,6 +32,8 @@ jobs:
           pip install pygbag==0.9.3
           python -m pygbag --build academic-game
           sed -i 's#<title>academic-game</title>#<title>Winning the Academic Game</title>#' academic-game/build/web/index.html
+          # start immediately instead of waiting for a click (the game has no audio)
+          sed -i 's#ume_block : 1#ume_block : 0#' academic-game/build/web/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: academic-game/build/web

@@ -14,7 +14,7 @@ YEARS = 10
 BASE_HOURS = 40
 MAX_HOURS = 60
 MAX_PER_ACTIVITY = 20
-STEP = 2
+STEP = 1
 MIN_CLASS_HOURS = 6  # rigorous + crowd-pleasing teaching: the classes must be taught
 
 CATEGORIES = ["Research", "Teaching", "Service", "Visibility", "Admin"]
@@ -34,19 +34,28 @@ ACTIVITIES = [
          pitch="Easy A's, fun lectures. +Evals, +Enrollment!"),
     dict(key="mentor", cat="Teaching", name="Deep mentoring",
          pitch="Long office hours, real advising. Hard to count."),
-    dict(key="vis_service", cat="Service", name="Visible service",
+    dict(key="vis_service", cat="Service", name="Visible committee service",
          pitch="Chair task forces. Great CV lines!"),
+    dict(key="review", cat="Service", name="Peer review & editing",
+         pitch="Review manuscripts, edit journals. A little credit."),
     dict(key="invis_service", cat="Service", name="Invisible service",
-         pitch="Review papers, fix broken things. No credit."),
-    dict(key="network", cat="Visibility", name="Networking & self-promo",
-         pitch="Conferences, social media. +Reputation!"),
+         pitch="Fix broken things, mentor colleagues. No credit."),
+    dict(key="social", cat="Visibility", name="Social media self-promo",
+         pitch="Threads, videos, hot takes. +Reputation fast!"),
+    dict(key="conference", cat="Visibility", name="Conferences & field-building",
+         pitch="Present, organize panels, meet students. Slow burn."),
+    dict(key="forms", cat="Admin", name="Forms & meetings",
+         pitch="Assessment reports, compliance, meetings. Required."),
     dict(key="email", cat="Admin", name="Inbox zero",
          pitch="Clear the daily quests. Deans love it."),
 ]
 ACT_KEYS = [a["key"] for a in ACTIVITIES]
+# Activities built mainly to score points on the annual review.
+SCORE_CHASING = ("salami", "trendy", "grants", "pleaser", "vis_service", "social", "forms", "email")
 
-DEFAULT_ALLOC = dict(deep=6, salami=4, trendy=2, grants=4, rigor=6, pleaser=4,
-                     mentor=2, vis_service=2, invis_service=2, network=4, email=4)
+DEFAULT_ALLOC = dict(deep=6, salami=3, trendy=2, grants=4, rigor=6, pleaser=4,
+                     mentor=2, vis_service=2, review=2, invis_service=1, social=2,
+                     conference=2, forms=2, email=2)
 
 # How each kind of paper gets cited over time: deep work starts slow and
 # keeps growing; quick work spikes and fades.
@@ -67,15 +76,15 @@ RUBRICS = {
         ("Service lines on CV", "service", 2),
     ]),
     6: dict(name="Tenure Review", need=4, hard=True, criteria=[
-        ("Publications", "pubs", 12),
-        ("h-index", "h", 5),
+        ("Publications", "pubs", 10),
+        ("h-index", "h", 4),
         ("Average teaching evaluation", "eval_avg", 3.8),
         ("External grants won", "grants_won", 1),
         ("Service lines on CV", "service", 5),
     ]),
     10: dict(name="Promotion to Full Professor", need=5, hard=False, criteria=[
-        ("Publications", "pubs", 25),
-        ("h-index", "h", 10),
+        ("Publications", "pubs", 22),
+        ("h-index", "h", 9),
         ("Grant dollars", "grant_dollars", 750_000),
         ("Reputation", "reputation", 45),
         ("Service lines on CV", "service", 10),
@@ -85,7 +94,7 @@ RUBRICS = {
 
 # Points per unit in the annual review. Only countable things appear here.
 REVIEW_WEIGHTS = dict(pub=8, cite=0.1, grant=20, eval=25, enroll=0.3,
-                      service=6, responsive=8)
+                      service=6, responsive=8, review=1, talk=3, compliance=10)
 
 STAR_LABELS = ["", "Unsatisfactory", "Needs Improvement", "Meets Expectations",
                "Exceeds Expectations", "Outstanding"]
@@ -109,6 +118,8 @@ BADGES = [
     ("Packed House: 80+ Students", lambda g: g.enrollment >= 80),
     ("Committee Regular", lambda g: g.service >= 6),
     ("Influencer", lambda g: g.reputation >= 50),
+    ("Reviewer of the Year: 40 Reviews", lambda g: g.reviews_done >= 40),
+    ("Conference Circuit: 10 Talks", lambda g: g.talks >= 10),
     ("Iron Professor: 56-hr Weeks", lambda g: g.total_hours() >= 56),
 ]
 
@@ -148,6 +159,9 @@ class Career:
         self.enrollment = 40
         self.service = 0.0
         self.reputation = 10.0
+        self.reviews_done = 0
+        self.talks = 0
+        self.editor = False
         self.guild = False
         self.badges = []
         self.title_level = 0
@@ -282,6 +296,15 @@ class Career:
         if fx.get("guild"):
             self.guild = True
             shown.append("Joined a co-authorship network")
+        if fx.get("editor"):
+            self.editor = True
+            shown.append("Now a journal editor")
+        if fx.get("talks"):
+            self.talks += fx["talks"]
+            shown.append(f"+{fx['talks']} presentation{'s' if fx['talks'] > 1 else ''}")
+        if fx.get("reviews"):
+            self.reviews_done += fx["reviews"]
+            shown.append(f"+{fx['reviews']} manuscript review{'s' if fx['reviews'] > 1 else ''}")
         if fx.get("cites"):
             self.add_cites(fx["cites"])
             shown.append(f"+{fx['cites']} citations")
@@ -322,6 +345,10 @@ class Career:
             v = fx["responsiveness"]
             self.mods["responsiveness"] += v
             shown.append(f"Responsiveness {'up' if v > 0 else 'down'}")
+        if fx.get("compliance"):
+            v = fx["compliance"]
+            self.mods["compliance"] += v
+            shown.append(f"Compliance {'up' if v > 0 else 'down'}")
         if fx.get("review"):
             v = fx["review"]
             self.mods["review"] += v
@@ -408,11 +435,35 @@ class Career:
                                   + self.reputation * 0.1 + m["enrollment"]))
 
         # Service, visibility, admin
-        self.service += a["vis_service"] * 0.35 + a["invis_service"] * 0.04
-        self.reputation += a["vis_service"] * 0.15 + a["network"] * 0.9 * eff
-        self.real_service += (a["vis_service"] * 0.25 + a["invis_service"] * 1.1
-                              + a["email"] * 0.1) * eff
-        responsive = max(0.0, min(1.0, a["email"] / 6 + m["responsiveness"]))
+        new_reviews = int(round(a["review"] * 1.5 * eff))
+        self.reviews_done += new_reviews
+        self.service += a["vis_service"] * 0.35 + a["review"] * 0.12 + a["invis_service"] * 0.04
+        self.reputation += a["vis_service"] * 0.15 + a["review"] * 0.2
+        self.real_service += (a["vis_service"] * 0.25 + a["review"] * 0.8 + a["invis_service"] * 1.1
+                              + a["forms"] * 0.05 + a["email"] * 0.1) * eff
+        self.knowledge += a["review"] * 0.15 * eff
+        if self.editor:
+            self.service += 1
+            self.reputation += 2
+            self.real_service += 4
+            self.energy -= 3
+            notes.append("Editing the journal took its usual toll on your weekends.")
+
+        # Social media: fast reputation and a citation bump, nothing else.
+        self.reputation += a["social"] * 1.0 * eff
+        if a["social"] and self.papers:
+            self.add_cites(a["social"] * 0.8)
+        # Conferences: slower reputation, but they actually feed the field.
+        self.frac["talks"] += a["conference"] * 0.35 * eff
+        new_talks = int(self.frac["talks"])
+        self.frac["talks"] -= new_talks
+        self.talks += new_talks
+        self.reputation += a["conference"] * 0.5 * eff
+        self.knowledge += a["conference"] * 0.25 * eff
+        self.real_service += a["conference"] * 0.35 * eff
+
+        responsive = max(0.0, min(1.0, a["email"] / 5 + m["responsiveness"]))
+        compliance = max(0.0, min(1.0, a["forms"] / 3 + m["compliance"]))
         self.reputation = max(0.0, min(100.0, self.reputation * 0.93))
 
         # Citations accumulate; reputation makes people notice your work.
@@ -440,7 +491,10 @@ class Career:
             ("Teaching evaluation", f"{ev:.2f} / 5", (ev - 3.0) * W["eval"]),
             ("Enrollment", f"{self.enrollment} students", max(0, self.enrollment - 40) * W["enroll"]),
             ("New service lines", f"{new_service}", new_service * W["service"]),
-            ("Responsiveness", f"{int(responsive * 100)}%", responsive * W["responsive"]),
+            ("Manuscripts reviewed", f"{new_reviews}", new_reviews * W["review"]),
+            ("Conference presentations", f"{new_talks}", new_talks * W["talk"]),
+            ("Reports filed & meetings", f"{int(compliance * 100)}%", compliance * W["compliance"]),
+            ("Email responsiveness", f"{int(responsive * 100)}%", responsive * W["responsive"]),
         ]
         if m["review"]:
             items.append(("Other items on your report", "", m["review"]))
@@ -471,6 +525,8 @@ class Career:
             return "Strong numbers, though you look tired. Keep it up!"
         if pts["New publications"] < 8:
             return "The committee would like to see more publications next year."
+        if pts["Reports filed & meetings"] < 5:
+            return "Your assessment report is overdue, and you have missed several faculty meetings."
         if ev < 3.6:
             return "Your evaluation scores are below the college average. Consider ways to boost them."
         if pts["Grant funded"] == 0 and self.year >= 3:
@@ -513,6 +569,10 @@ class Career:
         out["wellbeing"] = (sum(self.wellbeing) / len(self.wellbeing) / 100) if self.wellbeing else 0.8
         return out
 
+    def real_impact(self):
+        hp = self.hidden_pcts()
+        return (hp["knowledge"] + hp["learning"] + hp["real_service"]) / 3
+
     def game_pct(self):
         # 90 review points a year is an outstanding record.
         years = max(1, len(self.history))
@@ -528,6 +588,8 @@ class Career:
         g = self.game_pct()
         hp = self.hidden_pcts()
         real = (hp["knowledge"] + hp["learning"] + hp["real_service"]) / 3
+        if self.denied and g >= 0.5:
+            return ("The Near Miss", "You played the game hard and still lost. The rubric always wins.")
         if g >= 0.65 and real >= 0.6:
             if hp["wellbeing"] < 0.4:
                 return ("The Burned-Out Overachiever",

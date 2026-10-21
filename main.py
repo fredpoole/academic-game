@@ -7,15 +7,19 @@ import asyncio
 import math
 import re
 import sys
+import webbrowser
+from urllib.parse import quote
 
 import pygame
 
 from events import EVENTS
 from model import (ACTIVITIES, ACT_KEYS, BASE_HOURS, CATEGORIES, MAX_HOURS,
-                   MAX_PER_ACTIVITY, MIN_CLASS_HOURS, RUBRICS, STAR_LABELS,
+                   MAX_PER_ACTIVITY, MIN_CLASS_HOURS, RUBRICS, SCORE_CHASING, STAR_LABELS,
                    STEP, YEARS, Career)
 
 W, H = 1280, 800
+GAME_URL = "https://fredpoole.github.io/academic-game/"
+WEB = sys.platform == "emscripten"
 FPS = 60
 
 BG = (246, 242, 233)
@@ -388,24 +392,24 @@ class TitleScreen(Screen):
 
 class AllocateScreen(Screen):
     has_header = True
-    ROW_H = 47
+    ROW_H = 40
     LEFT_X = 28
 
     def __init__(self, app):
         super().__init__(app)
         self.rows = []
-        y = 100
+        y = 96
         last_cat = None
         for act in ACTIVITIES:
             if act["cat"] != last_cat:
                 last_cat = act["cat"]
                 self.rows.append(("cat", act["cat"], y))
-                y += 24
+                y += 21
             self.rows.append(("act", act, y))
             k = act["key"]
-            self.buttons.append(Button((470, y + 8, 34, 30), "-", lambda k=k: self.adjust(k, -STEP),
+            self.buttons.append(Button((470, y + 5, 34, 28), "-", lambda k=k: self.adjust(k, -STEP),
                                        kind="small", enabled=lambda k=k: self.g.alloc[k] > 0))
-            self.buttons.append(Button((560, y + 8, 34, 30), "+", lambda k=k: self.adjust(k, STEP),
+            self.buttons.append(Button((560, y + 5, 34, 28), "+", lambda k=k: self.adjust(k, STEP),
                                        kind="small",
                                        enabled=lambda k=k: self.g.alloc[k] < MAX_PER_ACTIVITY
                                        and self.g.total_hours() + STEP <= MAX_HOURS))
@@ -429,14 +433,14 @@ class AllocateScreen(Screen):
         for kind, item, y in self.rows:
             if kind == "cat":
                 col = CAT_COLORS[item]
-                text(surf, item.upper(), (self.LEFT_X, y + 6), 13, col, bold=True)
+                text(surf, item.upper(), (self.LEFT_X, y + 5), 12, col, bold=True)
                 continue
             act = item
             col = CAT_COLORS[act["cat"]]
-            pygame.draw.rect(surf, col, (self.LEFT_X - 8, y + 8, 4, 32), border_radius=2)
-            text(surf, act["name"], (self.LEFT_X + 4, y + 6), 18, INK, bold=True)
-            text(surf, act["pitch"], (self.LEFT_X + 4, y + 28), 14, MUTED)
-            text(surf, f"{g.alloc[act['key']]}", (532, y + 23), 20, INK, bold=True, anchor="center")
+            pygame.draw.rect(surf, col, (self.LEFT_X - 8, y + 5, 4, 30), border_radius=2)
+            text(surf, act["name"], (self.LEFT_X + 4, y + 3), 17, INK, bold=True)
+            text(surf, act["pitch"], (self.LEFT_X + 4, y + 23), 13, MUTED)
+            text(surf, f"{g.alloc[act['key']]}", (532, y + 19), 20, INK, bold=True, anchor="center")
             bar(surf, (610, y + 17, 140, 12), g.alloc[act["key"]] / MAX_PER_ACTIVITY, col)
 
         # Right side: professor, stats, rubric
@@ -449,9 +453,11 @@ class AllocateScreen(Screen):
         text(surf, f"{total}", (x, 110), 46, tcol, bold=True)
         text(surf, f"/ {BASE_HOURS} hrs", (x + font(46, True).size(str(total))[0] + 8, 132), 18, MUTED)
         msg_y = 168
-        if total > BASE_HOURS:
-            msg_y = text_block(surf, f"Overtime! Energy will drop ~{int((total - BASE_HOURS) * 2.2 - 5)} this year.",
-                               (x, msg_y), 240, 15, RED)
+        drop = round((total - BASE_HOURS) * 2.2 - 5)
+        if total > BASE_HOURS and drop > 0:
+            msg_y = text_block(surf, f"Overtime! Energy will drop ~{drop} this year.", (x, msg_y), 240, 15, RED)
+        elif total > BASE_HOURS:
+            msg_y = text_block(surf, "Overtime: you'll barely recover energy.", (x, msg_y), 240, 15, GOLD)
         elif total < BASE_HOURS:
             msg_y = text_block(surf, "Under 40 hours: you'll recover energy.", (x, msg_y), 240, 15, GREEN)
         if g.class_hours() < MIN_CLASS_HOURS:
@@ -555,27 +561,27 @@ class ReviewScreen(Screen):
         panel(surf, (60, 90, 700, 690))
         text(surf, "ANNUAL PERFORMANCE REVIEW", (90, 112), 13, MUTED, bold=True)
         text(surf, f"Year {r['year']}", (90, 132), 36, INK, bold=True)
-        y = 196
+        y = 182
         text(surf, "Item", (90, y), 13, MUTED, bold=True)
         text(surf, "This year", (480, y), 13, MUTED, bold=True, anchor="topright")
         text(surf, "Points", (720, y), 13, MUTED, bold=True, anchor="topright")
-        y += 26
+        y += 24
         for label, val, pts in r["items"]:
-            pygame.draw.line(surf, LINE, (90, y - 6), (720, y - 6))
-            text(surf, label, (90, y), 18, INK)
-            text(surf, val, (480, y), 18, MUTED, anchor="topright")
-            text(surf, f"{pts:+.0f}", (720, y), 18, GREEN if pts > 0 else RED if pts < 0 else MUTED,
+            pygame.draw.line(surf, LINE, (90, y - 5), (720, y - 5))
+            text(surf, label, (90, y), 16, INK)
+            text(surf, val, (480, y), 16, MUTED, anchor="topright")
+            text(surf, f"{pts:+.0f}", (720, y), 16, GREEN if pts > 0 else RED if pts < 0 else MUTED,
                  bold=True, anchor="topright")
-            y += 34
+            y += 27
         pygame.draw.line(surf, INK, (90, y - 4), (720, y - 4), 2)
         text(surf, "Total score", (90, y + 4), 22, INK, bold=True)
         text(surf, f"{r['score']:.0f}", (720, y + 2), 26, INK, bold=True, anchor="topright")
-        y += 52
+        y += 46
         for i in range(5):
             star(surf, (104 + i * 36, y + 16), 15, GOLD, filled=i < r["stars"])
         text(surf, STAR_LABELS[r["stars"]], (290, y + 4), 22, INK, bold=True)
         text(surf, f"Merit raise: {r['raise_pct']:.1f}%   (new salary ${g.salary:,.0f})", (90, y + 46), 17, MUTED)
-        y += 84
+        y += 78
         text(surf, "Comment from the Dean:", (90, y), 14, MUTED, bold=True)
         text_block(surf, f"“{r['comment']}”", (90, y + 20), 640, 18, INK)
 
@@ -640,14 +646,37 @@ class MilestoneScreen(Screen):
         super().draw(surf)
 
 
+def open_url(url):
+    if WEB:
+        import platform  # pygbag's platform module exposes the browser window
+        platform.window.open(url, "_blank")
+    else:
+        webbrowser.open(url)
+
+
+def copy_text(s):
+    try:
+        if WEB:
+            import platform
+            platform.window.navigator.clipboard.writeText(s)
+        else:
+            if not pygame.scrap.get_init():
+                pygame.scrap.init()
+            pygame.scrap.put_text(s)
+        return True
+    except Exception:
+        return False
+
+
 class FinalScreen(Screen):
-    PAGES = 4
+    PAGES = 5
 
     def __init__(self, app):
         super().__init__(app)
         self.page = 0
         self.scroll = 0
         self.anim = 0.0
+        self.share_msg = ""
         self.set_buttons()
 
     def set_buttons(self):
@@ -655,10 +684,39 @@ class FinalScreen(Screen):
         if self.page > 0:
             self.buttons.append(Button((60, 726, 180, 52), "<  Back", lambda: self.turn(-1), kind="small", size=18))
         if self.page < self.PAGES - 1:
-            labels = ["What really happened  >", "Behind the scenes  >", "Discuss  >"]
+            labels = ["What really happened  >", "Behind the scenes  >", "Discuss  >", "Share results  >"]
             self.buttons.append(Button((940, 726, 280, 52), labels[self.page], lambda: self.turn(1)))
         else:
             self.buttons.append(Button((940, 726, 280, 52), "Play again", self.app.new_game))
+            text_q, url_q = quote(self.share_text()), quote(GAME_URL)
+            links = [
+                ("Share on X", f"https://twitter.com/intent/tweet?text={text_q}&url={url_q}"),
+                ("Bluesky", f"https://bsky.app/intent/compose?text={quote(self.share_text() + ' ' + GAME_URL)}"),
+                ("Facebook", f"https://www.facebook.com/sharer/sharer.php?u={url_q}"),
+                ("LinkedIn", f"https://www.linkedin.com/sharing/share-offsite/?url={url_q}"),
+            ]
+            for i, (label, url) in enumerate(links):
+                self.buttons.append(Button((160 + i * 196, 620, 180, 46), label,
+                                           lambda u=url: self.share(u), size=17))
+            self.buttons.append(Button((160 + 4 * 196, 620, 176, 46), "Copy text", self.copy, kind="small", size=17))
+
+    def share_text(self):
+        g = self.g
+        if g.denied:
+            outcome = "was denied tenure"
+        else:
+            outcome = f"finished as {g.title}"
+        return (f"I played Winning the Academic Game and {outcome} with a {int(g.game_pct() * 100)}% game score, "
+                f"but only {int(g.real_impact() * 100)}% real impact. I'm \"{g.archetype()[0]}.\" "
+                f"Can you beat the system?")
+
+    def share(self, url):
+        open_url(url)
+        self.share_msg = "Opened in a new tab. If nothing appeared, allow pop-ups or use Copy text."
+
+    def copy(self):
+        ok = copy_text(self.share_text() + " " + GAME_URL)
+        self.share_msg = "Copied! Paste it anywhere." if ok else "Couldn't copy here. Select the text above instead."
 
     def turn(self, d):
         self.page += d
@@ -677,9 +735,11 @@ class FinalScreen(Screen):
 
     def draw(self, surf):
         surf.fill(BG)
-        [self.page_scoreboard, self.page_reveal, self.page_behind, self.page_discuss][self.page](surf)
+        pages = [self.page_scoreboard, self.page_reveal, self.page_behind, self.page_discuss, self.page_share]
+        pages[self.page](surf)
         for i in range(self.PAGES):
-            pygame.draw.circle(surf, INK if i == self.page else LINE, (W // 2 - 30 + i * 20, 752), 5)
+            pygame.draw.circle(surf, INK if i == self.page else LINE,
+                               (W // 2 - (self.PAGES - 1) * 10 + i * 20, 752), 5)
         super().draw(surf)
 
     def page_scoreboard(self, surf):
@@ -727,7 +787,7 @@ class FinalScreen(Screen):
         text_block(surf, "Publications, citations, grants, evaluations, enrollment, CV lines, responsiveness. "
                          "Counted every year, used for raises, tenure, and promotion.", (90, 340), 500, 17, MUTED)
         avg = g.average_alloc()
-        counted = sum(avg[k] for k in ("salami", "trendy", "grants", "pleaser", "vis_service", "network", "email"))
+        counted = sum(avg[k] for k in SCORE_CHASING)
         total = sum(avg.values()) or 1
         text_block(surf, f"On average, {counted:.0f} of your {total:.0f} weekly hours went to activities "
                          f"built to score points.", (90, 440), 500, 20, INK, bold=True)
@@ -827,6 +887,51 @@ class FinalScreen(Screen):
             pygame.draw.circle(surf, DARK, (156, y + 14), 16)
             text(surf, str(i), (156, y + 14), 17, (255, 255, 255), bold=True, anchor="center")
             y = text_block(surf, q, (190, y + 2), 940, 19, INK) + 22
+
+
+    def page_share(self, surf):
+        g = self.g
+        text(surf, "SHARE", (W // 2, 30), 14, MUTED, bold=True, anchor="midtop")
+        text(surf, "Your results vs. reality", (W // 2, 50), 40, INK, bold=True, anchor="midtop")
+        card = pygame.Rect(160, 110, 960, 490)
+        panel(surf, card)
+
+        # Top: what the game saw
+        text(surf, "THE GAME", (190, 130), 13, MUTED, bold=True)
+        title = "Tenure denied" if g.denied else g.title
+        text(surf, title, (190, 150), 30, INK, bold=True)
+        stats = [(f"{g.pubs}", "papers"), (f"{g.h}", "h-index"), (fmt_money(g.grant_dollars), "grants"),
+                 (f"{g.eval_avg:.2f}", "avg eval"), (f"${g.salary / 1000:.0f}K", "salary"),
+                 (f"{len(g.badges)}", "badges")]
+        for i, (val, label) in enumerate(stats):
+            x = 190 + i * 150
+            text(surf, val, (x, 196), 28, INK, bold=True)
+            text(surf, label, (x, 230), 14, MUTED)
+        text(surf, "Game score", (190, 266), 16, INK, bold=True)
+        bar(surf, (330, 268, 680, 18), g.game_pct() * self.anim, DARK)
+        text(surf, f"{int(g.game_pct() * 100)}%", (1090, 264), 20, INK, bold=True, anchor="topright")
+
+        pygame.draw.line(surf, LINE, (190, 312), (1090, 312), 2)
+
+        # Bottom: what actually happened
+        name, line = g.archetype()
+        text(surf, "REALITY", (190, 330), 13, MUTED, bold=True)
+        text(surf, name, (190, 350), 30, INK, bold=True)
+        text(surf, line, (190, 390), 16, MUTED)
+        hp = g.hidden_pcts()
+        rows = [("knowledge", "Knowledge created"), ("learning", "Student learning"),
+                ("real_service", "Real service"), ("wellbeing", "Wellbeing")]
+        for i, (key, label) in enumerate(rows):
+            x = 190 + (i % 2) * 460
+            y = 428 + (i // 2) * 52
+            text(surf, label, (x, y), 15, INK, bold=True)
+            text(surf, f"{int(hp[key] * 100)}%", (x + 420, y), 15, HIDDEN_COLORS[key], bold=True, anchor="topright")
+            bar(surf, (x, y + 22, 420, 14), hp[key] * self.anim, HIDDEN_COLORS[key])
+        text(surf, f"Real impact: {int(g.real_impact() * 100)}%", (190, 540), 22, INK, bold=True)
+        text(surf, GAME_URL, (1090, 548), 14, MUTED, anchor="topright")
+
+        if self.share_msg:
+            text(surf, self.share_msg, (W // 2, 680), 15, MUTED, anchor="midtop")
 
 
 # ---------------------------------------------------------------------------
