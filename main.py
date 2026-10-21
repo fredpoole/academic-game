@@ -299,22 +299,36 @@ class Button:
 
 
 class Screen:
+    has_header = False
+
     def __init__(self, app):
         self.app = app
         self.buttons = []
         self.t = 0.0
+        # Restart needs two clicks: the first arms it, the second restarts.
+        self.restart_armed = 0.0
+        self.restart = Button((560, 16, 130, 34), "Restart", self.click_restart, kind="small", size=16)
 
     @property
     def g(self):
         return self.app.career
 
+    def click_restart(self):
+        if self.restart_armed > 0:
+            self.app.new_game()
+        else:
+            self.restart_armed = 3.0
+
     def handle(self, e):
+        if self.has_header and self.restart.handle(e):
+            return
         for b in list(self.buttons):
             if b.handle(e):
                 return
 
     def update(self, dt):
         self.t += dt
+        self.restart_armed = max(0.0, self.restart_armed - dt)
 
     def draw(self, surf):
         for b in self.buttons:
@@ -333,6 +347,11 @@ class Screen:
         ecol = GREEN if g.energy >= 60 else GOLD if g.energy >= 30 else RED
         bar(surf, (960, 36, 280, 14), g.energy / 100, ecol, bg=(70, 72, 90))
         text(surf, f"{int(g.energy)}", (1246, 43), 14, (255, 255, 255), anchor="midleft")
+        if self.restart_armed > 0:
+            pygame.draw.rect(surf, RED, self.restart.rect, border_radius=8)
+            text(surf, "Click to confirm", self.restart.rect.center, 14, (255, 255, 255), bold=True, anchor="center")
+        else:
+            self.restart.draw(surf)
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +387,7 @@ class TitleScreen(Screen):
 
 
 class AllocateScreen(Screen):
+    has_header = True
     ROW_H = 47
     LEFT_X = 28
 
@@ -472,6 +492,8 @@ class AllocateScreen(Screen):
 
 
 class EventScreen(Screen):
+    has_header = True
+
     def __init__(self, app, event, index, count):
         super().__init__(app)
         self.event = event
@@ -519,6 +541,8 @@ class EventScreen(Screen):
 
 
 class ReviewScreen(Screen):
+    has_header = True
+
     def __init__(self, app, report):
         super().__init__(app)
         self.r = report
@@ -571,6 +595,8 @@ class ReviewScreen(Screen):
 
 
 class MilestoneScreen(Screen):
+    has_header = True
+
     def __init__(self, app, result):
         super().__init__(app)
         self.r = result
