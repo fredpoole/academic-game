@@ -41,9 +41,16 @@ Effects stack, so intersecting identities face compounding costs. In simulation,
 ## Files
 
 - `model.py`: career rules, scoring, rubrics, hidden scores. All balance numbers live here.
-- `identity.py`: identity options, bias effects, and research sources.
 - `events.py`: event scenarios. Add your own by copying an entry. Effects named `knowledge`, `learning`, and `real_service` stay hidden until the end.
-- `main.py`: Pygame screens and drawing.
+- `identity.py`: identity options, bias effects, and research sources.
+- `ui.py`: shared drawing toolkit (colors, text, buttons, the professor figure, browser helpers).
+- `screens.py`: the wide desktop layout.
+- `phone.py`: the tall phone layout. Same game and rules, with bigger text, tabs on the planning screen, and swipe-to-scroll on long pages.
+- `main.py`: starts the game and picks the layout.
+
+## Phones
+
+Phones (screens under 600 px on the short side) automatically get the tall phone layout, held upright. Computers and tablets get the wide layout. To force one layout, add `?phone` or `?desktop` to the link. To preview the phone layout on your computer, run `ACADEMIC_PHONE=1 python main.py`.
 
 ## Balance (from simulating 300 careers per strategy)
 
