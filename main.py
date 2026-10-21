@@ -22,6 +22,11 @@ from model import (ACTIVITIES, ACT_KEYS, BASE_HOURS, CATEGORIES, MAX_HOURS,
 
 W, H = 1280, 800
 GAME_URL = "https://fredpoole.github.io/academic-game/"
+READINGS = [
+    ("Read Strathern (1997)", "https://www.cambridge.org/core/journals/european-review/article/"
+                              "improving-ratings-audit-in-the-british-university-system/FC2EE640C0C44E3DB87C29FB666E9AAB"),
+    ("Read Nguyen (2024)", "https://jesp.org/paper/36346f73-90e0-81ae-bf22-ebd3754e0a2f"),
+]
 WEB = sys.platform == "emscripten"
 FPS = 60
 
@@ -788,8 +793,12 @@ class FinalScreen(Screen):
         self.buttons = []
         if self.page > 0:
             self.buttons.append(Button((60, 726, 180, 52), "<  Back", lambda: self.turn(-1), kind="small", size=18))
+        if self.page == 4:
+            for i, (label, url) in enumerate(READINGS):
+                self.buttons.append(Button((90 + i * 590, 636, 220, 44), label,
+                                           lambda u=url: self.read(u), kind="small", size=16))
         if self.page < self.PAGES - 1:
-            labels = ["What really happened  >", "Who you were  >", "Behind the scenes  >", "Discuss  >",
+            labels = ["What really happened  >", "Who you were  >", "Behind the scenes  >", "Why this happens  >",
                       "Share results  >"]
             self.buttons.append(Button((940, 726, 280, 52), labels[self.page], lambda: self.turn(1)))
         else:
@@ -816,6 +825,10 @@ class FinalScreen(Screen):
                 f"but only {int(g.real_impact() * 100)}% real impact. I'm \"{g.archetype()[0]}.\" "
                 f"Can you beat the system?")
 
+    def read(self, url):
+        open_url(url)
+        self.share_msg = "Opened in a new tab. If nothing appeared, allow pop-ups."
+
     def share(self, url):
         open_url(url)
         self.share_msg = "Opened in a new tab. If nothing appeared, allow pop-ups or use Copy text."
@@ -828,6 +841,7 @@ class FinalScreen(Screen):
         self.page += d
         self.scroll = 0
         self.anim = 0.0
+        self.share_msg = ""
         self.set_buttons()
 
     def handle(self, e):
@@ -974,26 +988,37 @@ class FinalScreen(Screen):
             text(surf, "scroll for more", (1200, 690), 13, MUTED, anchor="bottomright")
 
     def page_discuss(self, surf):
-        text(surf, "FOR DISCUSSION", (W // 2, 40), 14, MUTED, bold=True, anchor="midtop")
-        text(surf, "Goodhart's Law", (W // 2, 62), 44, INK, bold=True, anchor="midtop")
-        text(surf, "“When a measure becomes a target, it ceases to be a good measure.”",
-             (W // 2, 124), 22, MUTED, anchor="midtop")
-        panel(surf, (110, 180, 1060, 520))
-        qs = [
-            "Which choices felt obviously right in the moment? Which looked different after the reveal?",
-            "Every metric in this game measures something real. Where exactly did each one stop "
-            "matching the thing it was supposed to measure?",
-            "Who designed the scoring rules, and what were they trying to learn about professors?",
-            "Replay twice: once to max out promotion and salary, once to max out learning and knowledge. "
-            "Compare the two builds. How much do they overlap?",
-            "Where else are you playing a metric: GPA, test scores, social media, résumé lines?",
-            "If you could change one scoring rule so the winning strategy is also the good strategy, what would it be?",
+        text(surf, "WHY THIS HAPPENS", (W // 2, 30), 14, MUTED, bold=True, anchor="midtop")
+        text(surf, "Goodhart's Law and value capture", (W // 2, 50), 40, INK, bold=True, anchor="midtop")
+        sections = [
+            (60, "Goodhart's Law",
+             "\u201cWhen a measure becomes a target, it ceases to be a good measure.\u201d",
+             "Economist Charles Goodhart noticed in 1975 that statistics used to steer monetary policy stopped "
+             "behaving once policy started targeting them. Anthropologist Marilyn Strathern gave the idea its "
+             "familiar wording in 1997, writing about audits of British universities, the very system this game "
+             "models. Every number you chased began as a reasonable signal of good work. Once careers depended on "
+             "it, the rational move was to produce the signal instead of the work.",
+             "Goodhart, C. (1975). Problems of monetary management: The U.K. experience. "
+             "Strathern, M. (1997). \u2018Improving ratings\u2019: Audit in the British university system. "
+             "European Review, 5(3), 305\u2013321."),
+            (650, "Value capture",
+             "When a simple score quietly replaces what you actually cared about.",
+             "Philosopher C. Thi Nguyen calls it value capture: our rich, subtle values meet simplified, "
+             "quantified versions of them, like citation counts, GPAs, rankings, or step counts, and the simple "
+             "version takes over our reasoning. Goodhart's Law is about what happens to the measure. Value capture "
+             "is about what happens to us. Your professor probably started out wanting to understand things and "
+             "help students. By the end, which did they want: that, or the points?",
+             "Nguyen, C. T. (2024). Value capture. Journal of Ethics and Social Philosophy, 27(3). "
+             "See also Nguyen, The Score (2026)."),
         ]
-        y = 210
-        for i, q in enumerate(qs, 1):
-            pygame.draw.circle(surf, DARK, (156, y + 14), 16)
-            text(surf, str(i), (156, y + 14), 17, (255, 255, 255), bold=True, anchor="center")
-            y = text_block(surf, q, (190, y + 2), 940, 19, INK) + 22
+        for x, title, tagline, body, cite in sections:
+            panel(surf, (x, 110, 570, 590))
+            text(surf, title, (x + 30, 132), 28, INK, bold=True)
+            y = text_block(surf, tagline, (x + 30, 176), 510, 18, MUTED, bold=True)
+            y = text_block(surf, body, (x + 30, y + 14), 510, 17, INK, spacing=1.4)
+            text_block(surf, cite, (x + 30, y + 18), 510, 13, MUTED)
+        if self.share_msg:
+            text(surf, self.share_msg, (W // 2, 708), 14, MUTED, anchor="midtop")
 
 
     def page_identity(self, surf):

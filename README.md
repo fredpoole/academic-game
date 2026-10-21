@@ -22,7 +22,7 @@ Press Esc to quit.
 2. **Events.** Two scenarios each year, drawn from a pool of about 50 (so each playthrough differs), such as salami-slicing a dataset, reviewer #2, an editorship offer, the assessment report, AI-drafted papers, donuts on evaluation day, or capping a class for the rankings. You only see the "game" effects of each choice.
 3. **Annual review.** Points, stars, a merit raise, and badges.
 4. **Milestones.** Reappointment (Year 3), tenure (Year 6, fail it and the game ends), and Full Professor (Year 10). The rubric is always visible, so players learn to work backward from it.
-5. **The reveal.** Game score compared with knowledge created, student learning, real service, and wellbeing. Then a "behind the scenes" page showing what each choice really did, discussion questions, and a share page (results on top, reality below) with buttons for X, Bluesky, Facebook, LinkedIn, or copying the text.
+5. **The reveal.** Game score compared with knowledge created, student learning, real service, and wellbeing. Then a "behind the scenes" page showing what each choice really did, a short explainer on Goodhart's Law (Strathern 1997) and value capture (Nguyen 2024) with links to both, and a share page (results on top, reality below) with buttons for X, Bluesky, Facebook, LinkedIn, or copying the text.
 
 ## Identity effects and sources
 
